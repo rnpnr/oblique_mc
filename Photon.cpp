@@ -111,52 +111,51 @@ void Photon::Absorb()		// calculate absorption
 
 void Photon::Scatter()		// calculate next propagation direction
 {
-	if (!dead)
-	{
-		double costheta,fei,ran;
-		ran = random_uniform();
-		if (g!=0)
-		{
-			double aa=(1-g*g)/(1-g+2*g*ran);
-			costheta=(1+g*g-aa*aa)/(2*g);
-			if(costheta<-1) costheta=-1;
-			else if (costheta>1) costheta=1;
-		}
-		else
-		{
-			costheta=2*ran-1;
-		}//(3.28)
-		double sintheta,sinfei,cosfei;
-		sintheta=sqrt(1-costheta*costheta);
-		ran = random_uniform();
-		fei=2*PI*ran;//(3.29)
-		cosfei=cos(fei);
-		if (fei<PI)
-		{
-			sinfei=sqrt(1-cosfei*cosfei);
-		}
-		else
-		{
-			sinfei=-sqrt(1-cosfei*cosfei);
-		}
-		double uux,uuy,uuz;
-		if ((SIGN(uz)*uz)<=(1-ZERO))
-		{
-			uux=sintheta*(ux*uz*cosfei-uy*sinfei)/sqrt(1-uz*uz)+ux*costheta;
-			uuy=sintheta*(uy*uz*cosfei+ux*sinfei)/sqrt(1-uz*uz)+uy*costheta;
-			uuz=-sintheta*cosfei*sqrt(1-uz*uz)+uz*costheta;
-		}//(3.24)
-		else //close to normal propagation
-		{
-			uux=sintheta*cosfei;
-			uuy=sintheta*sinfei;
-			uuz=SIGN(uz)*costheta;
-		}//(3.30)
-		ux=uux;
-		uy=uuy;
-		uz=uuz;
-		nScatter+=1;
+	if (dead)
+		return;
+
+	double costheta, fei, ran;
+	ran = random_uniform();
+	if (g != 0) {
+		double aa = (1 - g * g) / (1 - g + 2 * g * ran);
+		costheta = (1 + g * g - aa * aa) / (2 * g);
+		if (costheta < -1)
+			costheta = -1;
+		else if (costheta > 1)
+			costheta = 1;
+	} else {
+		costheta = 2 * ran - 1;
+	} // (3.28)
+
+	double sintheta, sinfei, cosfei;
+	sintheta = sqrt(1 - costheta * costheta);
+	ran = random_uniform();
+	fei = 2 * PI * ran; // (3.29)
+	cosfei = cos(fei);
+	if (fei < PI) {
+		sinfei = sqrt(1 - cosfei * cosfei);
+	} else {
+		sinfei = -sqrt(1 - cosfei * cosfei);
 	}
+
+	double uux, uuy, uuz;
+	if ((SIGN(uz) * uz) <= (1 - ZERO)) {
+		uux = sintheta * (ux * uz * cosfei - uy * sinfei)
+		      / sqrt(1 - uz * uz) + ux * costheta;
+		uuy = sintheta * (uy * uz * cosfei + ux * sinfei)
+		      / sqrt(1 - uz * uz) + uy * costheta;
+		uuz = -sintheta * cosfei * sqrt(1 - uz * uz) + uz * costheta;
+		// (3.24)
+	} else {
+		// close to normal propagation
+		uux = sintheta * cosfei;
+		uuy = sintheta * sinfei;
+		uuz = SIGN(uz) * costheta;
+	} // (3.30)
+	ux = uux;
+	uy = uuy;
+	uz = uuz;
+	nScatter++;
 }
 
 void Photon::ReflectTransmit() // deal with photon across boundary
@@ -206,22 +205,18 @@ void Photon::ReflectTransmit() // deal with photon across boundary
 
 void Photon::Termination()  //Russian roulette survial test
 {
-	if (!dead)
-	{
-		double wth=1e-4;
-		double m=10;
-		if (w<=wth)
-		{
-			double e = random_uniform();
-			if (e>(1/m))
-			{
-				w=0;
-				dead=true;
-			}
-			else
-			{
-				w=m*w;
-			}
-		}
+	if (dead)
+		return;
+
+	if (w > 1e-4)
+		return;
+
+	double m = 10;
+	double e = random_uniform();
+	if (m * e > 1) {
+		w = 0;
+		dead = true;
+	} else {
+		w *= m;
 	}
 }
