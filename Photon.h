@@ -16,7 +16,6 @@ public:
 	double db;               // the distance from boundary
 	bool dead;               // True if photon is dead, otherwise False
 
-	static double **Rd_xy;
 	static double Rsp;       // specular reflectance
 
 	Photon();

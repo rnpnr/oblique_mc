@@ -7,7 +7,6 @@ refrence: Wang, "Biomedical optics", chpater3&6 */
 2. Incident beam in x-z plane.
 */
 
-
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -19,6 +18,7 @@ refrence: Wang, "Biomedical optics", chpater3&6 */
 #include "Photon.h"
 
 
+using namespace std;
 ////////////////////////////////////////////////
 int main(void)
 {
@@ -62,13 +62,9 @@ int main(void)
 	time_t start,end;	//simulation beginning and finishing time
 	time(&start);
 /////////////////////////////////////////////
-	int tmp1, tmp2;
+	int tmp1;
 
-////////initiate recording matrix////////////
-
-	double**	Rd_xy=alloc2D(Nx,Ny,0.0);
-
-	Photon::Rd_xy=Rd_xy;
+	alloc_mat(&Rd_xy, Nx, Ny);
 
 //////////Propagate photons////////////////////////////////
 	for (tmp1=1;tmp1<=nNum_photons;tmp1++)
@@ -125,21 +121,13 @@ int main(void)
 
 	f_out<<"///////////////Rd_xy/////////////////////"<<endl;
 	double scale=nNum_photons*dx*dy;
-	for (tmp1=0; tmp1<Nx; tmp1++)
-	{
-		for (tmp2=0; tmp2<Ny; tmp2++)
-		{
-			f_out<<Rd_xy[tmp1][tmp2]/scale<<' ';
-		}
-		f_out<<endl;
+	double *b = Rd_xy.b;
+	for (u32 i = 0; i < Rd_xy.Nx; i++) {
+		for (u32 j = 0; j < Rd_xy.Ny; j++)
+			f_out << b[j] / scale << ' ';
+		f_out << endl;
+		b += Rd_xy.Ny;
 	}
 	f_out<<endl;
 	f_out<<"/////////////////////////////////////////"<<endl;
-
-
-
-
-////////deallocate recording matrix//////////
-	dealloc2D(Nx,Rd_xy);
-/////////////////////////////////////////////
 }

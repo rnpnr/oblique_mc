@@ -1,7 +1,7 @@
 #include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <time.h>
-
-typedef uint64_t u64;
 
 #include "utils.h"
 
@@ -34,4 +34,21 @@ double
 random_uniform(void)
 {
 	return xoroshiro128plus(rand_state) / (double)UINT64_MAX;
+}
+
+void
+alloc_mat(struct Mat *m, int x, int y)
+{
+	if (x < 0 || y < 0) {
+		fputs("alloc_mat: dimensions must be positive\n", stderr);
+		exit(1);
+	}
+
+	m->b = (double *)calloc(x * y, sizeof(double));
+	if (m->b == NULL) {
+		fputs("malloc\n", stderr);
+		exit(1);
+	}
+	m->Nx = x;
+	m->Ny = y;
 }

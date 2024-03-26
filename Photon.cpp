@@ -9,7 +9,6 @@
 /////////////////////////////////////////
 
 
-double**  Photon::Rd_xy=NULL;
 double	 Photon::Rsp=0.0;
 /////////////////////////////////////////////////////////////////////////
 
@@ -192,7 +191,9 @@ void Photon::ReflectTransmit() // deal with photon across boundary
 		{
 			if(posx>-x_offset&&posx<x_offset&&posy>-y_offset&&posy<y_offset)
 			{
-				Rd_xy[int((posx+x_offset)/dx)][int((posy+y_offset)/dy)]+=w;
+				u32 xoff = (posx + x_offset) / dx * Rd_xy.Ny;
+				u32 yoff = (posy + y_offset) / dy;
+				Rd_xy.b[xoff + yoff] += w;
 			}
 			dead=true;
 		}

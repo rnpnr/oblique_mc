@@ -1,13 +1,12 @@
 /* Providing global variables and functions*/
 #include <math.h>
-#include <new>
-#include <iostream>
-#include <time.h>
+#include <stdint.h>
+
+typedef uint64_t u64;
+typedef uint32_t u32;
 
 //global constants
-#ifndef PI
-	#define PI 3.14159265
-#endif
+#define PI M_PI
 
 #ifndef ZERO
 	#define ZERO 1.0e-6 //for small deflection angle
@@ -31,8 +30,8 @@
 #endif
 GLOBAL double	dx;
 GLOBAL double	dy;
-GLOBAL int		Nx;
-GLOBAL int		Ny;
+GLOBAL int	Nx;
+GLOBAL int	Ny;
 GLOBAL double	zc;
 GLOBAL double	n;
 GLOBAL double	mua;
@@ -41,100 +40,21 @@ GLOBAL double	mut;
 GLOBAL double	g;
 GLOBAL double	d;
 
-
 GLOBAL double	th_in; // incident angle in degree
 
 GLOBAL double	x_offset;
 GLOBAL double	y_offset;
 
-//generate random data
-void random_init(void);
-double random_uniform(void);
+struct Mat {
+	u32 Nx, Ny;
+	double *b;
+};
+
+GLOBAL struct Mat Rd_xy;
 
 #define SIGN(x) ((x) >= 0 ? 1 : -1)
 
+void random_init(void);
+double random_uniform(void);
 
-////////allocte dynamic array/////////////////////////
-using namespace std;
-template <class T>
-T* alloc1D(int dim1, T t)
-{
-	T* p;
-	try
-	{
-		p=new T[dim1];
-	}
-	catch(bad_alloc)
-	{
-		cerr<<"Fail to allocate 1D array!"<<endl;
-		exit(1);
-	}
-	for (int tmp1=0;tmp1<dim1;tmp1++)
-	{
-		p[tmp1]=t;
-	}
-	return p;
-}
-template <class T>
-void dealloc1D(T* p)
-{
-	delete [] p;
-}
-///////////
-template <class T>
-T** alloc2D(int dim1,int dim2,T t)
-{
-	T** p;
-	try
-	{
-		p=new T*[dim1];
-		for (int tmp1=0;tmp1<dim1;tmp1++)
-		{
-			p[tmp1]=alloc1D(dim2,t);
-		}
-	}
-	catch (bad_alloc)
-	{
-		cerr<<"Fail to allocate 2D array!";
-	}
-	return p;
-}
-template <class T>
-void dealloc2D(int dim1,T** p)
-{
-	for (int tmp1=0;tmp1<dim1;tmp1++)
-	{
-		dealloc1D(p[tmp1]);
-	}
-	delete [] p;
-}
-/////////
-template <class T>
-T*** alloc3D(int dim1,int dim2,int dim3,T t)
-{
-	T*** p;
-	try
-	{
-		p=new T**[dim1];
-		for (int tmp1=0;tmp1<dim1;tmp1++)
-		{
-			p[tmp1]=alloc2D(dim2,dim3,t);
-		}
-	}
-	catch (bad_alloc)
-	{
-		cerr<<"Fail to allocate 3D array!";
-	}
-	return p;
-}
-template <class T>
-void dealloc3D(int dim1,int dim2,T*** p)
-{
-	for (int tmp1=0;tmp1<dim1;tmp1++)
-	{
-		dealloc2D(dim2,p[tmp1]);
-	}
-	delete [] p;
-}
-////////////////////////////////////////////////
-
+void alloc_mat(struct Mat *, int, int);
