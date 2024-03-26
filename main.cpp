@@ -13,14 +13,14 @@ refrence: Wang, "Biomedical optics", chpater3&6 */
 #include <string>
 
 #define GLOBALORIGIN
-#include "Utilities.h"
+#include "utils.h"
 #undef GLOABLORIGIN
 
 #include "Photon.h"
 
 
 ////////////////////////////////////////////////
-void main()
+int main(void)
 {
 ////////Input Interface////////////////////
 	cout<<"*****************************************"<<endl;

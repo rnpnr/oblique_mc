@@ -1,6 +1,7 @@
 /* Providing global variables and functions*/
 #include <math.h>
 #include <new>
+#include <iostream>
 #include <time.h>
 
 //global constants

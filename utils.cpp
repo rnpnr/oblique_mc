@@ -1,5 +1,4 @@
-
-#include "Utilities.h"
+#include "utils.h"
 
 /***********************************************************
 * A random number generator from Numerical Recipes in C. ****/
