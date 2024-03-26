@@ -30,6 +30,8 @@ int main(void)
 	cout<<"*****************************************"<<endl;
 	cout<<endl;
 
+	random_init();
+
 	cout<<"File name(Input:*.mci; Output:*.mco):  ";
 	string sFilename, sInfilename, sOutfilename;
 	cin>>sFilename;

@@ -58,14 +58,9 @@ void Photon::Launch()
 
 void Photon::CalStep()
 {
-	double ran;
-	if (s<ZERO)
-	{
-		do
-		{
-			ran=RandomNum();
-		} while(ran<=0||ran>1);
-		s=-log(ran); //dimensionless,
+	if (s < ZERO) {
+		double ran = random_uniform();
+		s = -log(ran + EPS);
 	}
 }
 
@@ -119,10 +114,7 @@ void Photon::Scatter()		// calculate next propagation direction
 	if (!dead)
 	{
 		double costheta,fei,ran;
-		do
-		{
-			ran=RandomNum();
-		} while(ran<0||ran>=1);
+		ran = random_uniform();
 		if (g!=0)
 		{
 			double aa=(1-g*g)/(1-g+2*g*ran);
@@ -136,10 +128,7 @@ void Photon::Scatter()		// calculate next propagation direction
 		}//(3.28)
 		double sintheta,sinfei,cosfei;
 		sintheta=sqrt(1-costheta*costheta);
-		do
-		{
-			ran=RandomNum();
-		} while(ran<0||ran>=1);
+		ran = random_uniform();
 		fei=2*PI*ran;//(3.29)
 		cosfei=cos(fei);
 		if (fei<PI)
@@ -193,12 +182,7 @@ void Photon::ReflectTransmit() // deal with photon across boundary
 		B=B*B;
 		ralphai=0.5*(2*A-A*A-A*B)/(B*(1-A));//(3.36)
 	}
-	double ran;
-	do
-	{
-		ran=RandomNum();
-	}
-	while(ran<0||ran>=1);
+	double ran = random_uniform();
 	if (ran<=ralphai) //rebound to current layer
 	{
 		uz=-uz;
@@ -228,11 +212,7 @@ void Photon::Termination()  //Russian roulette survial test
 		double m=10;
 		if (w<=wth)
 		{
-			double e;
-			do
-			{
-				e=RandomNum();
-			}while(e<0||e>1);
+			double e = random_uniform();
 			if (e>(1/m))
 			{
 				w=0;
@@ -245,4 +225,3 @@ void Photon::Termination()  //Russian roulette survial test
 		}
 	}
 }
-

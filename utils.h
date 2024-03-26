@@ -21,6 +21,8 @@
 	#define BIGVAL 1e6//big value
 #endif
 
+#define EPS 1.0e-9
+
 //global variables
 #ifdef GLOBALORIGIN
 	#define GLOBAL
@@ -46,13 +48,10 @@ GLOBAL double	x_offset;
 GLOBAL double	y_offset;
 
 //generate random data
-float	ran3(int *idum);
-double	RandomNum(void);
+void random_init(void);
+double random_uniform(void);
 
-
-//other auxilliary functions
-int min(int d1, int d2);
-#define SIGN(x) ((x)>=0?1:-1)
+#define SIGN(x) ((x) >= 0 ? 1 : -1)
 
 
 ////////allocte dynamic array/////////////////////////
