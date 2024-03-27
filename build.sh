@@ -1,5 +1,6 @@
 #!/bin/sh
+set -x
 
-srcs="main.cpp Photon.cpp utils.cpp"
+srcs="mcml.c"
 
-c++ -O3 -Wall -march=native $srcs -o mcml
+clang -O3 -Wall -march=native $srcs -o mcml
