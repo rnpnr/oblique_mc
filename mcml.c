@@ -11,13 +11,16 @@
 
 #include <math.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #define SGN(x) ((x) >= 0 ? 1 : -1)
 #define ABS(x) ((x) >= 0 ? x : -x)
+#define LEN(a) (sizeof(a) / sizeof(*a))
 
 #define ZERO   1.0e-6
 #define BIGVAL 1.0e6
@@ -25,7 +28,12 @@
 
 typedef uint64_t  u64;
 typedef uint32_t  u32;
+typedef uint8_t   u8;
 typedef double    f64;
+typedef ptrdiff_t size;
+
+typedef struct { u8 *data; size len; } s8;
+#define s8(s) (s8){(u8 *)s, (LEN(s) - 1)}
 
 typedef struct {
 	f64 x, y ,z;
@@ -66,10 +74,71 @@ die(const char *fmt, ...)
 	exit(1);
 }
 
+/* concatenates nstrs together. 0 terminates output for use with bad APIs */
+static s8
+s8concat(s8 *strs, size nstrs)
+{
+	s8 out = {0};
+	for (size i = 0; i < nstrs; i++)
+		out.len += strs[i].len;
+	out.data = malloc(out.len + 1);
+	if (out.data == NULL)
+		die("s8concat\n");
+	for (size i = 0, off = 0; i < nstrs; i++) {
+		if (!memcpy(out.data + off, strs[i].data, strs[i].len))
+			die("memcpy\n");
+		off += strs[i].len;
+	}
+	out.data[out.len] = 0;
+	return out;
+}
+
+static void
+dump_output(s8 pre)
+{
+	s8 xy = s8("_xy.tsv");
+	s8 rd = s8("_Rd_xy.csv");
+	s8 cat[2] = { pre, xy };
+	s8 out = s8concat(cat, 2);
+
+	FILE *fd = fopen((char *)out.data, "w");
+	if (fd == NULL)
+		die("rip can't open output file: %s\n", out.data);
+	fputs("x [cm]\ty [cm]\n", fd);
+	for (u32 i = 0; i < gctx.Nx; i++) {
+		f64 x = (i + 0.5) * gctx.dx - gctx.xoff;
+		f64 y = (i + 0.5) * gctx.dy - gctx.yoff;
+		fprintf(fd, "%e\t%e\n", x, y);
+	}
+	fclose(fd);
+
+	free(out.data);
+	cat[1] = rd;
+	out = s8concat(cat, 2);
+
+	fd = fopen((char *)out.data, "w");
+	if (fd == NULL)
+		die("rip can't open output file: %s\n", out.data);
+
+	f64 scale = gctx.N_photons * gctx.dx * gctx.dy;
+	f64 *b = Rd_xy.b;
+	for (u32 i = 0; i < Rd_xy.Nx; i++) {
+		for (u32 j = 0; j < Rd_xy.Ny; j++)
+			fprintf(fd, "%e,", b[j] / scale);
+		fseek(fd, -1, SEEK_CUR);
+		fputc('\n', fd);
+		b += Rd_xy.Ny;
+	}
+	fclose(fd);
+	free(out.data);
+}
+
 /* fill in extra global ctx values */
 static void
 init(void)
 {
+	if (gctx.Nx != gctx.Ny)
+		die("Nx != Ny, output must be square!\n");
 	f64 w = gctx.extent.right - gctx.extent.left;
 	f64 h = gctx.extent.top - gctx.extent.bot;
 	gctx.dx = w / gctx.Nx;
@@ -317,8 +386,8 @@ int
 main(int argc, char *argv[])
 {
 	if (argc != 2)
-		die("usage: %s output_file\n", argv[0]);
-	char *outfile = argv[1];
+		die("usage: %s output_prefix\n", argv[0]);
+	s8 pre = (s8){.data = (u8 *)argv[1], .len = strlen(argv[1])};
 
 	init();
 	random_init();
@@ -337,30 +406,7 @@ main(int argc, char *argv[])
 	time(&tend);
 	printf("Simulation took: %ld [s]\n", tend - tstart);
 
-
-	FILE *fd = fopen(outfile, "w");
-	if (fd == NULL)
-		die("rip can't open output file: %s\n", outfile);
-
-	fputs("/////////////Grid coordinates///////////\nx (cm): ", fd);
-	for (u32 i = 0; i < gctx.Nx; i++)
-		fprintf(fd, "%e ", (i + 0.5) * gctx.dx - gctx.xoff);
-	fputs("\ny (cm): ", fd);
-	for (u32 i = 0; i < gctx.Nx; i++)
-		fprintf(fd, "%e ", (i + 0.5) * gctx.dy - gctx.yoff);
-	fputs("\n/////////////////////////////////////////\n", fd);
-	fputs("///////////////Rd_xy/////////////////////\n", fd);
-
-	f64 scale = gctx.N_photons * gctx.dx * gctx.dy;
-	f64 *b = Rd_xy.b;
-	for (u32 i = 0; i < Rd_xy.Nx; i++) {
-		for (u32 j = 0; j < Rd_xy.Ny; j++)
-			fprintf(fd, "%e ", b[j] / scale);
-		fputc('\n', fd);
-		b += Rd_xy.Ny;
-	}
-	fputs("\n/////////////////////////////////////////\n", fd);
-	fclose(fd);
+	dump_output(pre);
 
 	return 0;
 }
