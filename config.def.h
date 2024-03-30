@@ -1,6 +1,6 @@
 /* global data that will not be modified after startup */
 static struct {
-	f64 dx, dy;     /* cm */
+	Rect extent;    /* extent [cm] */
 	u32 Nx, Ny;
 	u32 N_photons;
 
@@ -12,8 +12,14 @@ static struct {
 
 	f64 mu_t;
 	f64 xoff, yoff;
+	f64 dx, dy;
 } gctx =  {
-	.dx = 0.05, .dy = 0.05,
+	.extent = (Rect){
+		.top   = 1.5,
+		.bot   = -1.5,
+		.left  = -1.5,
+		.right = 1.5
+	},
 	.Nx = 61, .Ny = 61,
 	.N_photons = 10e6,
 

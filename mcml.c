@@ -32,6 +32,10 @@ typedef struct {
 } Vec3;
 
 typedef struct {
+	f64 top, bot, left, right;
+} Rect;
+
+typedef struct {
 	u32 Nx, Ny;
 	f64 *b;
 } Mat2;
@@ -66,8 +70,12 @@ die(const char *fmt, ...)
 static void
 init(void)
 {
-	gctx.xoff = gctx.dx * gctx.Nx / 2;
-	gctx.yoff = gctx.dy * gctx.Ny / 2;
+	f64 w = gctx.extent.right - gctx.extent.left;
+	f64 h = gctx.extent.top - gctx.extent.bot;
+	gctx.dx = w / gctx.Nx;
+	gctx.dy = h / gctx.Ny;
+	gctx.xoff = w / 2;
+	gctx.yoff = h / 2;
 	gctx.mu_t = gctx.mu_a + gctx.mu_s;
 	gctx.theta_i = gctx.theta_i * M_PI / 180;
 }
