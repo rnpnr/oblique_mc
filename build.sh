@@ -3,4 +3,4 @@ set -x
 
 srcs="mcml.c"
 
-clang -O3 -Wall -march=native $srcs -o mcml
+clang -O3 -Wall -march=native $srcs -o mcml -lm

@@ -10,20 +10,14 @@
  */
 
 #include <math.h>
-#include <errno.h>
-#include <fcntl.h>
 #include <stdarg.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <unistd.h>
 
 #define SGN(x) ((x) >= 0 ? 1 : -1)
 #define ABS(x) ((x) >= 0 ? x : -x)
-
-#define IS_SPACE(x) ((x) == '\n' || (x) == '\r' || (x) == '\t' || (x) == ' ')
 
 #define ZERO   1.0e-6
 #define BIGVAL 1.0e6
@@ -31,11 +25,7 @@
 
 typedef uint64_t  u64;
 typedef uint32_t  u32;
-typedef uint8_t   u8;
 typedef double    f64;
-typedef ptrdiff_t size;
-
-typedef struct { u8 *data; size len; } s8;
 
 typedef struct {
 	f64 x, y ,z;
@@ -54,19 +44,7 @@ typedef struct {
 	u32 dead;
 } Photon;
 
-/* global data that will not be modified after startup */
-static struct {
-	f64 dx, dy;
-	f64 xoff, yoff;
-	u32 Nx, Ny;
-	u32 N_photons;
-
-	f64 mu_a, mu_s, mu_t;
-	f64 g, d;
-
-	f64 n, n0;
-	f64 theta_i;
-} gctx;
+#include "config.h"
 
 /* these will be modified; FIXME: multithreading */
 static Mat2 Rd_xy;
@@ -84,103 +62,14 @@ die(const char *fmt, ...)
 	exit(1);
 }
 
-static s8
-read_file(const char *fname)
-{
-	int fd;
-	s8 ret;
-
-	if ((fd = open(fname, O_RDONLY)) < 0)
-		die("open: %s\n", fname);
-
-	ret.len = lseek(fd, 0L, SEEK_END);
-	ret.data = malloc(ret.len);
-	if (ret.data == NULL)
-		die("malloc\n");
-	lseek(fd, 0L, SEEK_SET);
-
-	size rlen;
-	do {
-		rlen = read(fd, ret.data, ret.len);
-	} while (rlen == -1 && errno == EINTR);
-	close(fd);
-
-	if (rlen != ret.len)
-		die("read: %s\n", fname);
-
-	return ret;
-}
-
-static s8
-split_at_space(s8 s)
-{
-	s8 ret;
-
-	/* skip leading white space */
-	while (IS_SPACE(*s.data) && s.len) {
-		s.data++;
-		s.len--;
-	}
-	ret.data = s.data;
-
-	while (!IS_SPACE(*s.data) && s.len) {
-		s.data++;
-		s.len--;
-	}
-	s.data[0] = 0;
-	ret.len = s.data - ret.data;
-	return ret;
-}
-
-/* fills in global ctx based on input */
+/* fill in extra global ctx values */
 static void
-load_input(const char *name)
+init(void)
 {
-	s8 f = read_file(name);
-	s8 s = split_at_space(f);
-
-	char *e;
-	#define ADVANCE_S(_s) do {\
-		_s.data = (u8 *)e + 1;\
-		_s.len = f.len - (f.data - s.data);\
-		_s = split_at_space(_s);\
-	} while (0);
-
-	errno = 0;
-	gctx.N_photons = (u64)strtod((char *)s.data, &e);
-	ADVANCE_S(s);
-	gctx.theta_i = strtod((char *)s.data, &e) * M_PI / 180;
-	ADVANCE_S(s);
-	gctx.dx = strtod((char *)s.data, &e);
-	ADVANCE_S(s);
-	gctx.dy = strtod((char *)s.data, &e);
-	ADVANCE_S(s);
-	gctx.Nx = strtod((char *)s.data, &e);
-	ADVANCE_S(s);
-	gctx.Ny = strtod((char *)s.data, &e);
-	ADVANCE_S(s);
-	gctx.n = strtod((char *)s.data, &e);
-	ADVANCE_S(s);
-	gctx.mu_a = strtod((char *)s.data, &e);
-	ADVANCE_S(s);
-	gctx.mu_s = strtod((char *)s.data, &e);
-	ADVANCE_S(s);
-	gctx.g = strtod((char *)s.data, &e);
-	ADVANCE_S(s);
-	gctx.d = strtod((char *)s.data, &e);
-
 	gctx.xoff = gctx.dx * gctx.Nx / 2;
 	gctx.yoff = gctx.dy * gctx.Ny / 2;
 	gctx.mu_t = gctx.mu_a + gctx.mu_s;
-
-	gctx.n0 = 1.0;
-
-	#undef ADVANCE_S
-
-	if (errno != 0)
-		die("strtod: errno = %d\n", errno);
-
-	free(f.data);
+	gctx.theta_i = gctx.theta_i * M_PI / 180;
 }
 
 static void
@@ -419,12 +308,11 @@ simulate_photon(Photon *p)
 int
 main(int argc, char *argv[])
 {
-	if (argc != 3)
-		die("usage: %s input_file output_file\n", argv[0]);
+	if (argc != 2)
+		die("usage: %s output_file\n", argv[0]);
+	char *outfile = argv[1];
 
-	load_input(argv[1]);
-	char *outfile = argv[2];
-
+	init();
 	random_init();
 
 	alloc_mat2(&Rd_xy, gctx.Nx, gctx.Ny);
