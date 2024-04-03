@@ -57,6 +57,16 @@ typedef struct {
 static Mat2 Rd_xy;
 static u64 rand_state[2];
 
+static void die(const char *, ...);
+
+#if defined(__unix__) || defined(__APPLE__)
+#include "posix.c"
+#elif defined(_WIN32)
+#error Win32 is currently unsupported!
+#else
+#error Unsupported Platform!
+#endif
+
 static void
 die(const char *fmt, ...)
 {
@@ -115,36 +125,39 @@ dump_output(s8 pre)
 	s8 rd = s8("_Rd_xy.csv");
 	s8 cat[2] = { pre, xy };
 	s8 out = s8concat(cat, 2);
+	os_file f = os_open(out, OS_WRITE);
 
-	FILE *fd = fopen((char *)out.data, "w");
-	if (fd == NULL)
-		die("rip can't open output file: %s\n", out.data);
-	fputs("x [cm]\ty [cm]\n", fd);
+	u8 dbuf[4096];
+	s8 buf = { .data = dbuf };
+
+	os_write(f, s8("x [cm]\ty [cm]\n"));
 	for (u32 i = 0; i < gctx.Nx; i++) {
 		f64 x = (i + 0.5) * gctx.dx - gctx.xoff;
 		f64 y = (i + 0.5) * gctx.dy - gctx.yoff;
-		fprintf(fd, "%e\t%e\n", x, y);
+		buf.len = snprintf((char *)buf.data, sizeof(dbuf),
+		                   "%e\t%e\n", x, y);
+		os_write(f, buf);
 	}
-	fclose(fd);
 
+	os_close(f);
 	free(out.data);
 	cat[1] = rd;
 	out = s8concat(cat, 2);
-
-	fd = fopen((char *)out.data, "w");
-	if (fd == NULL)
-		die("rip can't open output file: %s\n", out.data);
+	f = os_open(out, OS_WRITE);
 
 	f64 scale = gctx.N_photons * gctx.dx * gctx.dy;
 	f64 *b = Rd_xy.b;
 	for (u32 i = 0; i < Rd_xy.Nx; i++) {
-		for (u32 j = 0; j < Rd_xy.Ny; j++)
-			fprintf(fd, "%e,", b[j] / scale);
-		fseek(fd, -1, SEEK_CUR);
-		fputc('\n', fd);
+		for (u32 j = 0; j < Rd_xy.Ny; j++) {
+			buf.len = snprintf((char *)buf.data, sizeof(dbuf),
+			                   "%e,", b[j] / scale);
+			os_write(f, buf);
+		}
+		os_seek(f, -1, OS_SEEK_CUR);
+		os_write(f, s8("\n"));
 		b += Rd_xy.Ny;
 	}
-	fclose(fd);
+	os_close(f);
 	free(out.data);
 }
 
