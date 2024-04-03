@@ -261,9 +261,9 @@ reflect_or_transmit_photon(Photon *p)
 			 * we are in bounds of output region */
 			if (p->pos.x > -gctx.xoff && p->pos.x < gctx.xoff &&
 			    p->pos.y > -gctx.yoff && p->pos.y < gctx.yoff) {
-				u32 ri = (p->pos.x + gctx.xoff) / gctx.dx;
-				u32 ci = (p->pos.y + gctx.yoff) / gctx.dy;
-				Rd_xy.b[ri * Rd_xy.Ny + ci] += p->w;
+				u32 ri = (p->pos.y + gctx.yoff) / gctx.dy;
+				u32 ci = (p->pos.x + gctx.xoff) / gctx.dx;
+				Rd_xy.b[ri * Rd_xy.Nx + ci] += p->w;
 			}
 		}
 		p->dead = 1;
