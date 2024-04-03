@@ -38,3 +38,9 @@ os_seek(os_file f, size off, int whence)
 {
 	lseek(f, off, whence);
 }
+
+static u32
+os_get_core_count(void)
+{
+	return sysconf(_SC_NPROCESSORS_ONLN);
+}

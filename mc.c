@@ -12,6 +12,7 @@
  */
 
 #include <math.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -23,6 +24,7 @@
 #define SGN(x)     ((x) >= 0 ? 1 : -1)
 #define ABS(x)     ((x) >= 0 ? x : -x)
 #define LEN(a)     (sizeof(a) / sizeof(*a))
+#define MIN(a, b)  ((a) < (b) ? (a) : (b))
 #define DEG2RAD(a) ((a) * M_PI / 180.0)
 
 #define ZERO   1.0e-6
@@ -32,6 +34,7 @@
 typedef uint64_t  u64;
 typedef uint32_t  u32;
 typedef uint8_t   u8;
+typedef u32       b32;
 typedef double    f64;
 typedef ptrdiff_t size;
 
@@ -51,11 +54,19 @@ typedef struct {
 	u32 dead;
 } Photon;
 
+typedef struct {
+	pthread_t id;
+	u64       rand_state[2];
+	Mat2      Rd_xy;
+	f64       theta_i;
+	u32       N_lines;
+	b32       done;
+} WorkerCtx;
+
 #include "config.h"
 
-/* these will be modified; FIXME: multithreading */
-static Mat2 Rd_xy;
-static u64 rand_state[2];
+/* these will be modified by multiple threads */
+static struct { pthread_mutex_t lock; u64 N; } completed_photons;
 
 static void die(const char *, ...);
 
@@ -119,7 +130,7 @@ s8concat(s8 *strs, size nstrs)
 }
 
 static void
-dump_output(s8 pre)
+dump_output(s8 pre, Mat2 Rd_xy)
 {
 	s8 xy = s8("_xy.tsv");
 	s8 rd = s8("_Rd_xy.csv");
@@ -145,7 +156,7 @@ dump_output(s8 pre)
 	out = s8concat(cat, 2);
 	f = os_open(out, OS_WRITE);
 
-	f64 scale = gctx.N_photons * gctx.dx * gctx.dy;
+	f64 scale = gctx.N_photons_per_line * gctx.N_lines * gctx.dx * gctx.dy;
 	f64 *b = Rd_xy.b;
 	for (u32 i = 0; i < Rd_xy.Nx; i++) {
 		for (u32 j = 0; j < Rd_xy.Ny; j++) {
@@ -177,14 +188,12 @@ init(void)
 }
 
 static void
-random_init(void)
+random_init(u64 s[2])
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
-	rand_state[0] = (intptr_t)&printf ^ ts.tv_sec
-	              ^ ((u64)ts.tv_nsec * 0xAC5533CD);
-	rand_state[1] = (intptr_t)&malloc ^ ts.tv_sec
-	              ^ ((u64)ts.tv_nsec * 0xAC5533CD);
+	s[0] = (intptr_t)&printf ^ ts.tv_sec ^ ((u64)ts.tv_nsec * 0xAC5533CD);
+	s[1] = (intptr_t)&malloc ^ ts.tv_sec ^ ((u64)ts.tv_nsec * 0xAC5533CD);
 }
 
 static u64
@@ -200,19 +209,37 @@ xoroshiro128plus(u64 s[2])
 }
 
 static f64
-random_uniform(void)
+random_uniform(u64 s[2])
 {
-	return xoroshiro128plus(rand_state) / (f64)UINT64_MAX;
+	return xoroshiro128plus(s) / (f64)UINT64_MAX;
+}
+
+static Mat2
+alloc_mat2(u32 x, u32 y)
+{
+	Mat2 m;
+	m.b = calloc(x * y, sizeof(f64));
+	if (m.b == NULL)
+		die("calloc\n");
+	m.Nx = x;
+	m.Ny = y;
+	return m;
 }
 
 static void
-alloc_mat2(Mat2 *m, u32 x, u32 y)
+sum_mat2(Mat2 m1, Mat2 m2)
 {
-	m->b = calloc(x * y, sizeof(f64));
-	if (m->b == NULL)
-		die("calloc\n");
-	m->Nx = x;
-	m->Ny = y;
+	if (m1.Nx != m2.Nx || m1.Ny != m2.Ny)
+		die("sum_mat2: matrix sizes incompatible\n");
+	/* TODO: Vectorize this */
+	f64 *b1 = m1.b;
+	f64 *b2 = m2.b;
+	for (u32 i = 0; i < m1.Nx; i++) {
+		for (u32 j = 0; j < m1.Ny; j++)
+			b1[j] += b2[j];
+		b1 += m1.Ny;
+		b2 += m1.Ny;
+	}
 }
 
 static Vec3
@@ -266,7 +293,7 @@ absorb_photon(Photon *p)
 }
 
 static void
-reflect_or_transmit_photon(Photon *p)
+reflect_or_transmit_photon(Photon *p, WorkerCtx *ctx)
 {
 	f64 sin_ai = sqrt(1 - p->dir.z * p->dir.z);
 	f64 sin_at = sin_ai * gctx.n / gctx.n0; /* eq. 3.35 */
@@ -287,7 +314,7 @@ reflect_or_transmit_photon(Photon *p)
 		r_ai = 0.5 * (2 * A - A * A - A * B) / (B * (1 - A)); /* eq 3.36 */
 	}
 
-	f64 r = random_uniform();
+	f64 r = random_uniform(ctx->rand_state);
 	if (r <= r_ai) {
 		/* rebound to current layer */
 		p->dir.z = -p->dir.z;
@@ -300,7 +327,7 @@ reflect_or_transmit_photon(Photon *p)
 			    p->pos.y > -gctx.yoff && p->pos.y < gctx.yoff) {
 				u32 ri = (p->pos.y + gctx.yoff) / gctx.dy;
 				u32 ci = (p->pos.x + gctx.xoff) / gctx.dx;
-				Rd_xy.b[ri * Rd_xy.Nx + ci] += p->w;
+				ctx->Rd_xy.b[ri * ctx->Rd_xy.Nx + ci] += p->w;
 			}
 		}
 		p->dead = 1;
@@ -308,7 +335,7 @@ reflect_or_transmit_photon(Photon *p)
 }
 
 static void
-scatter_photon(Photon *p)
+scatter_photon(Photon *p, u64 rand_state[2])
 {
 	if (p->dead)
 		return;
@@ -316,7 +343,7 @@ scatter_photon(Photon *p)
 	f64 cos_t, fei;
 	f64 g = gctx.g;
 	if (g != 0) {
-		f64 r = random_uniform();
+		f64 r = random_uniform(rand_state);
 		f64 aa = (1 - g * g) / (1 - g + 2 * g * r);
 		cos_t = (1 + g * g - aa * aa) / (2 * g);
 		if (cos_t < -1)
@@ -324,12 +351,12 @@ scatter_photon(Photon *p)
 		else if (cos_t > 1)
 			cos_t = 1;
 	} else {
-		cos_t = 2 * random_uniform() - 1;
+		cos_t = 2 * random_uniform(rand_state) - 1;
 	} /* eq. (3.28) */
 
 	f64 sin_t, sin_fei, cos_fei;
 	sin_t = sqrt(1 - cos_t * cos_t);
-	fei = 2 * M_PI * random_uniform(); /* eq. (3.29) */
+	fei = 2 * M_PI * random_uniform(rand_state); /* eq. (3.29) */
 	cos_fei = cos(fei);
 	sin_fei = sin(fei);
 
@@ -353,11 +380,10 @@ scatter_photon(Photon *p)
 	p->dir.y = uuy;
 	p->dir.z = uuz;
 	p->n_scatters++;
-
 }
 
 static void
-check_photon_life(Photon *p)
+check_photon_life(Photon *p, u64 rand_state[2])
 {
 	if (p->dead)
 		return;
@@ -366,7 +392,7 @@ check_photon_life(Photon *p)
 		return;
 
 	f64 m = 10;
-	f64 e = random_uniform();
+	f64 e = random_uniform(rand_state);
 	if (m * e > 1) {
 		p->dead = 1;
 	} else {
@@ -375,10 +401,10 @@ check_photon_life(Photon *p)
 }
 
 static f64
-next_step(f64 s)
+next_step(f64 s, u64 rand_state[2])
 {
 	if (s < ZERO) {
-		f64 r = random_uniform();
+		f64 r = random_uniform(rand_state);
 		s = -log(r + EPS);
 	}
 	return s;
@@ -398,23 +424,89 @@ step_towards_boundary(Photon *p)
 }
 
 static void
-simulate_photon(Photon *p)
+simulate_photon(Photon *p, WorkerCtx *ctx)
 {
 	f64 step = 0, boundary_dist = 0;
 	do {
-		step = next_step(step);
+		step = next_step(step, ctx->rand_state);
 		boundary_dist = step_towards_boundary(p);
 		if (boundary_dist * gctx.mu_t <= step) {
 			move_photon(p, boundary_dist);
 			step -= boundary_dist * gctx.mu_t;
-			reflect_or_transmit_photon(p);
+			reflect_or_transmit_photon(p, ctx);
 		} else {
 			move_photon(p, step / gctx.mu_t);
 			absorb_photon(p);
-			scatter_photon(p);
+			scatter_photon(p, ctx->rand_state);
 		}
-		check_photon_life(p);
+		check_photon_life(p, ctx->rand_state);
 	} while (!p->dead);
+}
+
+static void
+bump_completed_photons(u32 n)
+{
+	pthread_mutex_lock(&completed_photons.lock);
+	completed_photons.N += n;
+	pthread_mutex_unlock(&completed_photons.lock);
+}
+
+static void *
+worker_thread(WorkerCtx *ctx)
+{
+	ctx->Rd_xy = alloc_mat2(gctx.Nx, gctx.Ny);
+	random_init(ctx->rand_state);
+
+	u32 photon_inc = gctx.N_photons_per_line / 32;
+	u32 photon_rem = gctx.N_photons_per_line % 32;
+	for (; ctx->N_lines; ctx->N_lines--) {
+		/* cache starting photon; nothing here changes between runs */
+		Photon p_start;
+		Vec3Pol pos = gctx.incidence_location;
+		pos.theta = ctx->theta_i;
+		pos.theta += (ctx->N_lines - 1) * 2 * M_PI / gctx.N_lines;
+		launch_photon(&p_start, pos);
+		for (u32 i = 1; i <= gctx.N_photons_per_line; i++) {
+			/* Photon is 64 bytes. this will use SIMD if available.
+			 * otherwise compiler will just insert a memcpy call */
+			Photon p = p_start;
+			simulate_photon(&p, ctx);
+			if (i % photon_inc == 0)
+				bump_completed_photons(photon_inc);
+		}
+
+		if (photon_rem != 0)
+			bump_completed_photons(photon_rem);
+	}
+	ctx->done = 1;
+
+	return NULL;
+}
+
+static void
+print_progress(time_t start)
+{
+	pthread_mutex_lock(&completed_photons.lock);
+	u64 n_done = completed_photons.N;
+	pthread_mutex_unlock(&completed_photons.lock);
+
+	time_t now;
+	time(&now);
+	u64 total_photons = gctx.N_photons_per_line * gctx.N_lines;
+	u64 n_remaining = total_photons - n_done;
+	f64 photons_per_sec = n_done / (f64)(now - start);
+	f64 sec_per_line = gctx.N_photons_per_line / photons_per_sec;
+
+	u32 secs_remaining = n_remaining / photons_per_sec;
+	u32 mins_remaining = secs_remaining / 60;
+	secs_remaining = secs_remaining % 60;
+
+	/* move cursor to line start and clear line */
+	fputs("\r\x1B[K", stdout);
+	printf("\x1B[36;1m[%0.1f%%]\x1B[0m Photons/s = %0.2f | s/Line: %0.2f "
+	       "| Time Remaining: %um %us", 100 * n_done/(f64)total_photons,
+	       photons_per_sec, sec_per_line, mins_remaining, secs_remaining);
+	fflush(stdout);
 }
 
 int
@@ -423,31 +515,59 @@ main(int argc, char *argv[])
 	if (argc != 2)
 		die("usage: %s output_prefix\n", argv[0]);
 	s8 pre = (s8){.data = (u8 *)argv[1], .len = strlen(argv[1])};
+	/* TODO: check if prefix contains directories and ensure they exist */
 
 	init();
-	random_init();
 
-	alloc_mat2(&Rd_xy, gctx.Nx, gctx.Ny);
+	Mat2 Rd_xy_out = alloc_mat2(gctx.Nx, gctx.Ny);
 
-	/* Propagate Photons */
+	pthread_mutex_init(&completed_photons.lock, NULL);
+
+	/* TODO: split up photons instead if are only a few lines */
+	u32 thread_count = MIN(os_get_core_count(), gctx.N_lines);
+	WorkerCtx *threads = calloc(thread_count, sizeof(WorkerCtx));
+	if (!threads)
+		die("couldn't allocate thread contexts\n");
+
+	u32 rem = gctx.N_lines % thread_count;
+	f64 theta_step = 2 * M_PI / (f64)thread_count;
+	f64 theta = gctx.incidence_location.theta;
 	time_t tstart, tend;
 	time(&tstart);
+	for (u32 i = 0; i < thread_count; i++) {
+		threads[i].theta_i = theta;
+		threads[i].N_lines = gctx.N_lines / thread_count;
+		if (rem) {
+			threads[i].N_lines += 1;
+			rem -= 1;
+		}
+		pthread_create(&threads[i].id, NULL,
+		               (void *(*)(void*))worker_thread, &threads[i]);
+		theta += theta_step;
+	}
 
-	/* cache starting photon; nothing at launch changes between runs */
-	Photon p_start;
-	launch_photon(&p_start, gctx.incidence_location);
-	for (u32 i = 1; i <= gctx.N_photons; i++) {
-		/* Photon is 64 bytes. this will use SIMD if available.
-		 * otherwise compiler will just insert a memcpy call here */
-		Photon p = p_start;
-		simulate_photon(&p);
-		if (i % (gctx.N_photons / 10) == 0)
-			printf("[%u/%u] photons done!\n", i, gctx.N_photons);
+	b32 all_done = 0;
+	while (!all_done) {
+		struct timespec ts = { .tv_sec = 1, .tv_nsec = 0 };
+		nanosleep(&ts, NULL);
+		all_done = 1;
+		for (u32 i = 0; i < thread_count; i++) {
+			all_done &= threads[i].done;
+			if (threads[i].done && threads[i].Rd_xy.b) {
+				sum_mat2(Rd_xy_out, threads[i].Rd_xy);
+				free(threads[i].Rd_xy.b);
+				threads[i].Rd_xy.b = NULL;
+			}
+		}
+		print_progress(tstart);
 	}
 	time(&tend);
-	printf("Simulation took: %ld [s]\n", tend - tstart);
+	u32 secs = tend - tstart;
+	printf("\nRuntime: %um %us\n", secs/60, secs%60);
 
-	dump_output(pre);
+	pthread_mutex_destroy(&completed_photons.lock);
+
+	dump_output(pre, Rd_xy_out);
 
 	return 0;
 }
