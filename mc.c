@@ -1,12 +1,14 @@
 /* Oblique Monte Carlo
- * Written by Randy Palamar - March 2024
+ * Written by Randy Palamar - March-April 2024
  * Based on: Hybrid-MC by Li Li
- * Refrence: Wang, "Biomedical optics", chpater 3 & 6
+ * Reference: Wang, "Biomedical optics", chapter 3 & 6
  */
 
 /* Details:
- * - Uses Cartesian coordinates.
- * - Beam is incident in x-z plane.
+ * - Mostly uses Cartesian coordinates. Polar coordinates are used for
+ *   specifying incident location.
+ * - Beam faces in positive z direction incident from anywhere in r-theta
+ *   plane. Initial launch direction is always towards origin.
  */
 
 #include <math.h>
@@ -18,9 +20,10 @@
 #include <string.h>
 #include <time.h>
 
-#define SGN(x) ((x) >= 0 ? 1 : -1)
-#define ABS(x) ((x) >= 0 ? x : -x)
-#define LEN(a) (sizeof(a) / sizeof(*a))
+#define SGN(x)     ((x) >= 0 ? 1 : -1)
+#define ABS(x)     ((x) >= 0 ? x : -x)
+#define LEN(a)     (sizeof(a) / sizeof(*a))
+#define DEG2RAD(a) ((a) * M_PI / 180.0)
 
 #define ZERO   1.0e-6
 #define BIGVAL 1.0e6
@@ -35,18 +38,10 @@ typedef ptrdiff_t size;
 typedef struct { u8 *data; size len; } s8;
 #define s8(s) (s8){(u8 *)s, (LEN(s) - 1)}
 
-typedef struct {
-	f64 x, y ,z;
-} Vec3;
-
-typedef struct {
-	f64 top, bot, left, right;
-} Rect;
-
-typedef struct {
-	u32 Nx, Ny;
-	f64 *b;
-} Mat2;
+typedef struct { f64 x, y ,z; }               Vec3;
+typedef struct { f64 r, theta, z; }           Vec3Pol;
+typedef struct { f64 top, bot, left, right; } Rect;
+typedef struct { u32 Nx, Ny; f64 *b; }        Mat2;
 
 typedef struct {
 	Vec3 pos;
@@ -72,6 +67,26 @@ die(const char *fmt, ...)
 	va_end(ap);
 
 	exit(1);
+}
+
+static Vec3
+polar_to_cartesian(Vec3Pol v)
+{
+	return (Vec3){
+		.x = v.r * cos(v.theta),
+		.y = v.r * sin(v.theta),
+		.z = v.z
+	};
+}
+
+static Vec3Pol
+cartesian_to_polar(Vec3 v)
+{
+	return (Vec3Pol){
+		.r = sqrt(v.x * v.x + v.y * v.y),
+		.theta = atan2(v.y, v.x),
+		.z = v.z
+	};
 }
 
 /* concatenates nstrs together. 0 terminates output for use with bad APIs */
@@ -146,7 +161,6 @@ init(void)
 	gctx.xoff = w / 2;
 	gctx.yoff = h / 2;
 	gctx.mu_t = gctx.mu_a + gctx.mu_s;
-	gctx.theta_i = gctx.theta_i * M_PI / 180;
 }
 
 static void
@@ -188,20 +202,30 @@ alloc_mat2(Mat2 *m, u32 x, u32 y)
 	m->Ny = y;
 }
 
-static void
-launch_photon(Photon *p)
+static Vec3
+launch_direction_from_polar_angle(f64 theta)
 {
-	p->pos = (Vec3){0, 0, 0};
-	p->dir.x = sin(gctx.theta_i) * gctx.n0 / gctx.n;
-	p->dir.y = 0;
-	p->dir.z = sqrt(1 - p->dir.x * p->dir.x);
+	f64 rdir = sin(gctx.theta_i) * gctx.n0 / gctx.n;
+	return (Vec3){
+		.x = -rdir * cos(theta),
+		.y = -rdir * sin(theta),
+		.z = sqrt(1 - rdir * rdir)
+	};
+}
+
+static void
+launch_photon(Photon *p, Vec3Pol pos)
+{
+	p->pos = polar_to_cartesian(pos);
+	p->dir = launch_direction_from_polar_angle(pos.theta);
 	p->n_scatters = 0;
 	p->dead = 0;
 
+	Vec3Pol dir = cartesian_to_polar(p->dir);
 	f64 sin_ti = sin(gctx.theta_i);
 	f64 cos_ti = cos(gctx.theta_i);
-	f64 sin_tt = p->dir.x;
-	f64 cos_tt = p->dir.z;
+	f64 sin_tt = dir.r;
+	f64 cos_tt = dir.z;
 	f64 raux1 = sin_ti * cos_tt - cos_ti * sin_tt;
 	raux1 *= raux1;
 	f64 raux2 = sin_ti * cos_tt + cos_ti * sin_tt;
@@ -364,8 +388,6 @@ static void
 simulate_photon(Photon *p)
 {
 	f64 step = 0, boundary_dist = 0;
-
-	launch_photon(p);
 	do {
 		step = next_step(step);
 		boundary_dist = step_towards_boundary(p);
@@ -397,8 +419,14 @@ main(int argc, char *argv[])
 	/* Propagate Photons */
 	time_t tstart, tend;
 	time(&tstart);
-	Photon p;
+
+	/* cache starting photon; nothing at launch changes between runs */
+	Photon p_start;
+	launch_photon(&p_start, gctx.incidence_location);
 	for (u32 i = 1; i <= gctx.N_photons; i++) {
+		/* Photon is 64 bytes. this will use SIMD if available.
+		 * otherwise compiler will just insert a memcpy call here */
+		Photon p = p_start;
 		simulate_photon(&p);
 		if (i % (gctx.N_photons / 10) == 0)
 			printf("[%u/%u] photons done!\n", i, gctx.N_photons);
