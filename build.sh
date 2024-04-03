@@ -1,6 +1,6 @@
 #!/bin/sh
 set -x
 
-srcs="mcml.c"
+srcs="mc.c"
 
-clang -O3 -Wall -march=native $srcs -o mcml -lm
+clang -O3 -Wall -march=native $srcs -o mc -lm
