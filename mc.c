@@ -292,8 +292,8 @@ move_photon(Photon *p, f64 s)
 static void
 absorb_photon(Photon *p)
 {
-	f64 dw = p->w * gctx.mu_a / gctx.mu_t; /* eq 3.24 */
-	p->w -= dw;
+	f64 delta_w = p->w * gctx.mu_a / gctx.mu_t; /* eq 3.24 */
+	p->w -= delta_w;
 	if (p->w < 0)
 		p->dead = 1;
 }
@@ -346,7 +346,7 @@ scatter_photon(Photon *p, u64 rand_state[2])
 	if (p->dead)
 		return;
 
-	f64 cos_t, fei;
+	f64 cos_t, phi;
 	f64 g = gctx.g;
 	if (g != 0) {
 		f64 r = random_uniform(rand_state);
@@ -360,31 +360,32 @@ scatter_photon(Photon *p, u64 rand_state[2])
 		cos_t = 2 * random_uniform(rand_state) - 1;
 	} /* eq. (3.28) */
 
-	f64 sin_t, sin_fei, cos_fei;
+	f64 sin_t, sin_phi, cos_phi;
 	sin_t = sqrt(1 - cos_t * cos_t);
-	fei = 2 * M_PI * random_uniform(rand_state); /* eq. (3.29) */
-	cos_fei = cos(fei);
-	sin_fei = sin(fei);
+	phi = 2 * M_PI * random_uniform(rand_state); /* eq. (3.29) */
+	cos_phi = cos(phi);
+	sin_phi = sqrt(1 - cos_phi * cos_phi);
 
-	f64 uux, uuy, uuz;
-	if (ABS(p->dir.z) <= (1 - ZERO)) {
-		/* eq. (3.24) */
-		Vec3 u = p->dir;
-		uux = sin_t * (u.x * u.z * cos_fei - u.y * sin_fei)
-		      / sqrt(1 - u.z * u.z) + u.x * cos_t;
-		uuy = sin_t * (u.y * u.z * cos_fei + u.x * sin_fei)
-		      / sqrt(1 - u.z * u.z) + u.y * cos_t;
-		uuz = -sin_t * cos_fei * sqrt(1 - u.z * u.z) + u.z * cos_t;
+	Vec3 u_mu;
+	if (ABS(p->dir.z) < (1 - ZERO)) {
+		/* eq. (3.30) */
+		Vec3 mu = p->dir;
+		f64 mu_zsq = sqrt(1 - mu.z * mu.z);
+		u_mu.x = sin_t * (mu.x * mu.z * cos_phi - mu.y * sin_phi)
+		         / mu_zsq + mu.x * cos_t;
+		u_mu.y = sin_t * (mu.y * mu.z * cos_phi + mu.x * sin_phi)
+		         / mu_zsq + mu.y * cos_t;
+		u_mu.z = -sin_t * cos_phi * mu_zsq + mu.z * cos_t;
 	} else {
 		/* close to normal propagation */
-		/* eq. (3.30) */
-		uux = sin_t * cos_fei;
-		uuy = sin_t * sin_fei;
-		uuz = SGN(p->dir.z) * cos_t;
+		/* eq. (3.31) */
+		u_mu = (Vec3){
+			.x = sin_t * cos_phi,
+			.y = sin_t * sin_phi,
+			.z = SGN(p->dir.z) * cos_t
+		};
 	}
-	p->dir.x = uux;
-	p->dir.y = uuy;
-	p->dir.z = uuz;
+	p->dir = u_mu;
 	p->n_scatters++;
 }
 
