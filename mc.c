@@ -11,6 +11,7 @@
  *   plane. Initial launch direction is always towards origin.
  */
 
+#include <immintrin.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdarg.h>
@@ -229,17 +230,22 @@ alloc_mat2(u32 x, u32 y)
 static void
 sum_mat2(Mat2 m1, Mat2 m2)
 {
-	if (m1.Nx != m2.Nx || m1.Ny != m2.Ny)
-		die("sum_mat2: matrix sizes incompatible\n");
-	/* TODO: Vectorize this */
+	u64 N_total = m1.Nx * m1.Ny;
 	f64 *b1 = m1.b;
 	f64 *b2 = m2.b;
-	for (u32 i = 0; i < m1.Nx; i++) {
-		for (u32 j = 0; j < m1.Ny; j++)
-			b1[j] += b2[j];
-		b1 += m1.Ny;
-		b2 += m1.Ny;
+
+#if defined(__AVX__)
+	while (N_total >= 4) {
+		__m256d v1 = _mm256_load_pd(b1);
+		__m256d v2 = _mm256_load_pd(b2);
+		_mm256_store_pd(b1, _mm256_add_pd(v1, v2));
+		N_total -= 4;
+		b1 += 4;
+		b2 += 4;
 	}
+#endif
+	for (u64 i = 0; i < N_total; i++)
+		b1[i] += b2[i];
 }
 
 static Vec3
