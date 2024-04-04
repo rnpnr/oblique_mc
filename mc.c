@@ -74,7 +74,7 @@ static void die(const char *, ...);
 #if defined(__unix__) || defined(__APPLE__)
 #include "posix.c"
 #elif defined(_WIN32)
-#error Win32 is currently unsupported!
+#include "win32.c"
 #else
 #error Unsupported Platform!
 #endif
@@ -88,6 +88,7 @@ die(const char *fmt, ...)
 	vfprintf(stderr, fmt, ap);
 	va_end(ap);
 
+	os_pause();
 	exit(1);
 }
 

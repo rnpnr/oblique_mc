@@ -4,9 +4,9 @@
 #define OS_READ     O_RDONLY
 #define OS_WRITE    (O_WRONLY | O_CREAT | O_TRUNC)
 #define OS_RW       O_RDWR
+#define OS_SEEK_BEG SEEK_SET
 #define OS_SEEK_CUR SEEK_CUR
 #define OS_SEEK_END SEEK_END
-#define OS_SEEK_SET SEEK_SET
 
 typedef int os_file;
 
@@ -43,4 +43,11 @@ static u32
 os_get_core_count(void)
 {
 	return sysconf(_SC_NPROCESSORS_ONLN);
+}
+
+static void
+os_pause(void)
+{
+	/* not useful here since the user will run from command line */
+	return;
 }
