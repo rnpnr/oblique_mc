@@ -2,7 +2,7 @@
 #include <unistd.h>
 
 #define OS_READ     O_RDONLY
-#define OS_WRITE    O_WRONLY
+#define OS_WRITE    (O_WRONLY | O_CREAT | O_TRUNC)
 #define OS_RW       O_RDWR
 #define OS_SEEK_CUR SEEK_CUR
 #define OS_SEEK_END SEEK_END
@@ -14,7 +14,7 @@ static os_file
 os_open(s8 path, int flags)
 {
 	os_file f;
-	f = open((char *)path.data, flags);
+	f = open((char *)path.data, flags, 0600);
 	if (f == -1)
 		die("rip can't open output file: %s\n", path.data);
 	return f;
