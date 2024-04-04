@@ -1,6 +1,4 @@
 #!/bin/sh
 set -x
 
-srcs="mc.c"
-
-clang -O3 -Wall -march=native $srcs -o mc -lm -lpthread
+clang -O3 -Wall -march=native mc.c -o mc -lm -lpthread -static
