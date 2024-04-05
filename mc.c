@@ -42,7 +42,7 @@ typedef ptrdiff_t size;
 typedef struct { u8 *data; size len; } s8;
 #define s8(s) (s8){(u8 *)s, (LEN(s) - 1)}
 
-typedef struct { f64 x, y ,z; }               Vec3;
+typedef struct { f64 x, y, z; }               Vec3;
 typedef struct { f64 r, theta, z; }           Vec3Pol;
 typedef struct { f64 top, bot, left, right; } Rect;
 typedef struct { u32 Nx, Ny; f64 *b; }        Mat2;
@@ -531,7 +531,7 @@ main(int argc, char *argv[])
 
 	pthread_mutex_init(&completed_photons.lock, NULL);
 
-	/* TODO: split up photons instead if are only a few lines */
+	/* TODO: split up photons instead if there are only a few lines */
 	u32 thread_count = MIN(os_get_core_count(), gctx.N_lines);
 	WorkerCtx *threads = calloc(thread_count, sizeof(WorkerCtx));
 	if (!threads)

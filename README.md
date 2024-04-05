@@ -2,7 +2,8 @@
 
 This code simulates an obliquely incident photon source (pencil
 beam) on a scattering medium. It can simulate one incident point
-source or many.
+source or many. The program has been tested on and is known to
+work on Linux and Windows 10.
 
 ![Diffuse Reflectance](example.png)
 
@@ -10,9 +11,8 @@ source or many.
 
 Configuration is changed by copying `config.def.h` to `config.h`
 and editing it. This configuration is then baked into the compiled
-binary. This helps the compiler optimize for the binary for a
-faster runtime and keeps the types of configuration variables
-clear.
+binary. This helps the compiler optimize the binary for a faster
+runtime and keeps the types of configuration variables clear.
 
 ## Building
 
@@ -22,6 +22,9 @@ compiled by running:
 ```
 ./build.sh
 ```
+
+On Linux the only dependency is libc, on Windows winpthreads is
+also required.
 
 ## Running
 
