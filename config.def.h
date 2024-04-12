@@ -1,5 +1,9 @@
 /* global data that will not be modified at runtime */
 
+/* optional prefix to append to output files. if specified
+ * as {} a prefix must be specified on command line */
+static s8 g_output_prefix = s8("out/ex");
+
 /* simulation output extent [cm] */
 static Rect g_extent = {
 	.top   = 1.5,

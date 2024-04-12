@@ -554,9 +554,11 @@ print_progress(time_t start)
 int
 main(int argc, char *argv[])
 {
-	if (argc != 2)
-		die("usage: %s output_prefix\n", argv[0]);
-	s8 pre = (s8){.data = (u8 *)argv[1], .len = c_str_len(argv[1])};
+	if (argv[1])
+		g_output_prefix = (s8){(u8 *)argv[1], c_str_len(argv[1])};
+	if (g_output_prefix.len == 0)
+		die("usage: %s [output_prefix]\n", argv[0]);
+
 	/* TODO: check if prefix contains directories and ensure they exist */
 
 	init();
@@ -609,7 +611,7 @@ main(int argc, char *argv[])
 
 	pthread_mutex_destroy(&completed_photons.lock);
 
-	dump_output(pre, Rd_xy_out);
+	dump_output(g_output_prefix, Rd_xy_out);
 
 	return 0;
 }
