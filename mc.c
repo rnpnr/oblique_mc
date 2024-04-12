@@ -19,8 +19,15 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
+
+#if defined(_DEBUG) && defined(__clang__)
+	#define ASSERT(c) do if (!(c)) __builtin_debugtrap(); while(0)
+#elif defined(_DEBUG) /* as usual GCC is bad */
+	#define ASSERT(c) do if (!(c)) asm("int3; nop"); while(0)
+#else
+	#define ASSERT(a)
+#endif
 
 #define SGN(x)     ((x) >= 0 ? 1 : -1)
 #define ABS(x)     ((x) >= 0 ? x : -x)
@@ -112,6 +119,22 @@ cartesian_to_polar(Vec3 v)
 	};
 }
 
+static size
+c_str_len(char *s)
+{
+	char *t;
+	for (t = s; *t; t++);
+	return t - s;
+}
+
+static void
+mem_copy(s8 src, s8 dest)
+{
+	ASSERT(src.len <= dest.len);
+	for (size i = 0; i < src.len; i++)
+		dest.data[i] = src.data[i];
+}
+
 /* concatenates nstrs together. 0 terminates output for use with bad APIs */
 static s8
 s8concat(s8 *strs, size nstrs)
@@ -119,43 +142,46 @@ s8concat(s8 *strs, size nstrs)
 	s8 out = {0};
 	for (size i = 0; i < nstrs; i++)
 		out.len += strs[i].len;
+
 	out.data = malloc(out.len + 1);
 	if (out.data == NULL)
 		die("s8concat\n");
-	for (size i = 0, off = 0; i < nstrs; i++) {
-		if (!memcpy(out.data + off, strs[i].data, strs[i].len))
-			die("memcpy\n");
-		off += strs[i].len;
+
+	s8 tmp = out;
+	for (size i = 0; i < nstrs; i++) {
+		mem_copy(strs[i], tmp);
+		tmp.data += strs[i].len;
+		tmp.len  -= strs[i].len;
 	}
 	out.data[out.len] = 0;
+
 	return out;
 }
 
 static void
 dump_output(s8 pre, Mat2 Rd_xy)
 {
-	s8 xy = s8("_xy.tsv");
+	s8 xy = s8("_xy.csv");
 	s8 rd = s8("_Rd_xy.csv");
-	s8 cat[2] = { pre, xy };
-	s8 out = s8concat(cat, 2);
+	s8 out = s8concat((s8 []){pre, xy}, 2);
 	os_file f = os_open(out, OS_WRITE);
 
 	u8 dbuf[4096];
 	s8 buf = { .data = dbuf };
 
-	os_write(f, s8("x [cm]\ty [cm]\n"));
+	os_write(f, s8("x [cm],y [cm]\n"));
 	for (u32 i = 0; i < gctx.Nx; i++) {
 		f64 x = (i + 0.5) * gctx.dx - gctx.xoff;
 		f64 y = (i + 0.5) * gctx.dy - gctx.yoff;
 		buf.len = snprintf((char *)buf.data, sizeof(dbuf),
-		                   "%e\t%e\n", x, y);
+		                   "%e,%e\n", x, y);
 		os_write(f, buf);
 	}
 
+	printf("x,y axis written to: %s\n", out.data);
 	os_close(f);
 	free(out.data);
-	cat[1] = rd;
-	out = s8concat(cat, 2);
+	out = s8concat((s8 []){pre, rd}, 2);
 	f = os_open(out, OS_WRITE);
 
 	f64 scale = gctx.N_photons_per_line * gctx.N_lines * gctx.dx * gctx.dy;
@@ -170,6 +196,7 @@ dump_output(s8 pre, Mat2 Rd_xy)
 		os_write(f, s8("\n"));
 		b += Rd_xy.Ny;
 	}
+	printf("Rd_xy written to:    %s\n", out.data);
 	os_close(f);
 	free(out.data);
 }
@@ -522,7 +549,7 @@ main(int argc, char *argv[])
 {
 	if (argc != 2)
 		die("usage: %s output_prefix\n", argv[0]);
-	s8 pre = (s8){.data = (u8 *)argv[1], .len = strlen(argv[1])};
+	s8 pre = (s8){.data = (u8 *)argv[1], .len = c_str_len(argv[1])};
 	/* TODO: check if prefix contains directories and ensure they exist */
 
 	init();
