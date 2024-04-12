@@ -73,6 +73,13 @@ typedef struct {
 
 #include "config.h"
 
+/* these are only modified during init() */
+static f64 g_dx, g_dy;
+static f64 g_xoff, g_yoff;
+static f64 g_mu_t;
+
+static f64 g_d = 1e6; /* layer thickness in [cm] */
+
 /* these will be modified by multiple threads */
 static struct { pthread_mutex_t lock; u64 N; } completed_photons;
 
@@ -170,9 +177,9 @@ dump_output(s8 pre, Mat2 Rd_xy)
 	s8 buf = { .data = dbuf };
 
 	os_write(f, s8("x [cm],y [cm]\n"));
-	for (u32 i = 0; i < gctx.Nx; i++) {
-		f64 x = (i + 0.5) * gctx.dx - gctx.xoff;
-		f64 y = (i + 0.5) * gctx.dy - gctx.yoff;
+	for (u32 i = 0; i < g_Nx; i++) {
+		f64 x = (i + 0.5) * g_dx - g_xoff;
+		f64 y = (i + 0.5) * g_dy - g_yoff;
 		buf.len = snprintf((char *)buf.data, sizeof(dbuf),
 		                   "%e,%e\n", x, y);
 		os_write(f, buf);
@@ -184,7 +191,7 @@ dump_output(s8 pre, Mat2 Rd_xy)
 	out = s8concat((s8 []){pre, rd}, 2);
 	f = os_open(out, OS_WRITE);
 
-	f64 scale = gctx.N_photons_per_line * gctx.N_lines * gctx.dx * gctx.dy;
+	f64 scale = g_N_photons_per_line * g_N_lines * g_dx * g_dy;
 	f64 *b = Rd_xy.b;
 	for (u32 i = 0; i < Rd_xy.Nx; i++) {
 		for (u32 j = 0; j < Rd_xy.Ny; j++) {
@@ -205,15 +212,15 @@ dump_output(s8 pre, Mat2 Rd_xy)
 static void
 init(void)
 {
-	if (gctx.Nx != gctx.Ny)
+	if (g_Nx != g_Ny)
 		die("Nx != Ny, output must be square!\n");
-	f64 w = gctx.extent.right - gctx.extent.left;
-	f64 h = gctx.extent.top - gctx.extent.bot;
-	gctx.dx = w / gctx.Nx;
-	gctx.dy = h / gctx.Ny;
-	gctx.xoff = w / 2;
-	gctx.yoff = h / 2;
-	gctx.mu_t = gctx.mu_a + gctx.mu_s;
+	f64 w = g_extent.right - g_extent.left;
+	f64 h = g_extent.top - g_extent.bot;
+	g_dx = w / g_Nx;
+	g_dy = h / g_Ny;
+	g_xoff = w / 2;
+	g_yoff = h / 2;
+	g_mu_t = g_mu_a + g_mu_s;
 }
 
 static void
@@ -279,7 +286,7 @@ sum_mat2(Mat2 m1, Mat2 m2)
 static Vec3
 launch_direction_from_polar_angle(f64 theta)
 {
-	f64 rdir = sin(gctx.theta_i) * gctx.n0 / gctx.n;
+	f64 rdir = sin(g_theta_i) * g_n0 / g_n;
 	return (Vec3){
 		.x = -rdir * cos(theta),
 		.y = -rdir * sin(theta),
@@ -296,8 +303,8 @@ launch_photon(Photon *p, Vec3Pol pos)
 	p->dead = 0;
 
 	Vec3Pol dir = cartesian_to_polar(p->dir);
-	f64 sin_ti = sin(gctx.theta_i);
-	f64 cos_ti = cos(gctx.theta_i);
+	f64 sin_ti = sin(g_theta_i);
+	f64 cos_ti = cos(g_theta_i);
 	f64 sin_tt = dir.r;
 	f64 cos_tt = dir.z;
 	f64 raux1 = sin_ti * cos_tt - cos_ti * sin_tt;
@@ -320,7 +327,7 @@ move_photon(Photon *p, f64 s)
 static void
 absorb_photon(Photon *p)
 {
-	f64 delta_w = p->w * gctx.mu_a / gctx.mu_t; /* eq 3.24 */
+	f64 delta_w = p->w * g_mu_a / g_mu_t; /* eq 3.24 */
 	p->w -= delta_w;
 	if (p->w < 0)
 		p->dead = 1;
@@ -330,11 +337,11 @@ static void
 reflect_or_transmit_photon(Photon *p, WorkerCtx *ctx)
 {
 	f64 sin_ai = sqrt(1 - p->dir.z * p->dir.z);
-	f64 sin_at = sin_ai * gctx.n / gctx.n0; /* eq. 3.35 */
+	f64 sin_at = sin_ai * g_n / g_n0; /* eq. 3.35 */
 
 	f64 r_ai;
 	if (sin_at < ZERO) { /* roughly normal */
-		r_ai = (gctx.n - gctx.n0) / (gctx.n + gctx.n0);
+		r_ai = (g_n - g_n0) / (g_n + g_n0);
 		r_ai *= r_ai;
 	} else if (sin_at > 1.0) { /* TIR */
 		r_ai = 1;
@@ -357,10 +364,10 @@ reflect_or_transmit_photon(Photon *p, WorkerCtx *ctx)
 		if (p->dir.z < -ZERO) {
 			/* hit upper boundary. record reflactance if
 			 * we are in bounds of output region */
-			if (p->pos.x > -gctx.xoff && p->pos.x < gctx.xoff &&
-			    p->pos.y > -gctx.yoff && p->pos.y < gctx.yoff) {
-				u32 ri = (p->pos.y + gctx.yoff) / gctx.dy;
-				u32 ci = (p->pos.x + gctx.xoff) / gctx.dx;
+			if (p->pos.x > -g_xoff && p->pos.x < g_xoff &&
+			    p->pos.y > -g_yoff && p->pos.y < g_yoff) {
+				u32 ri = (p->pos.y + g_yoff) / g_dy;
+				u32 ci = (p->pos.x + g_xoff) / g_dx;
 				ctx->Rd_xy.b[ri * ctx->Rd_xy.Nx + ci] += p->w;
 			}
 		}
@@ -375,7 +382,7 @@ scatter_photon(Photon *p, u64 rand_state[2])
 		return;
 
 	f64 cos_t, phi;
-	f64 g = gctx.g;
+	f64 g = g_anisotropy;
 	if (g != 0) {
 		f64 r = random_uniform(rand_state);
 		f64 aa = (1 - g * g) / (1 - g + 2 * g * r);
@@ -452,7 +459,7 @@ step_towards_boundary(Photon *p)
 	if (p->dir.z < -ZERO) /* travel up */
 		db = -p->pos.z / p->dir.z;
 	else if (p->dir.z > ZERO) /* travel down */
-		db = (gctx.d - p->pos.z) / p->dir.z;
+		db = (g_d - p->pos.z) / p->dir.z;
 	else
 		db = BIGVAL;
 	return db;
@@ -465,12 +472,12 @@ simulate_photon(Photon *p, WorkerCtx *ctx)
 	do {
 		step = next_step(step, ctx->rand_state);
 		boundary_dist = step_towards_boundary(p);
-		if (boundary_dist * gctx.mu_t <= step) {
+		if (boundary_dist * g_mu_t <= step) {
 			move_photon(p, boundary_dist);
-			step -= boundary_dist * gctx.mu_t;
+			step -= boundary_dist * g_mu_t;
 			reflect_or_transmit_photon(p, ctx);
 		} else {
-			move_photon(p, step / gctx.mu_t);
+			move_photon(p, step / g_mu_t);
 			absorb_photon(p);
 			scatter_photon(p, ctx->rand_state);
 		}
@@ -489,19 +496,19 @@ bump_completed_photons(u32 n)
 static void *
 worker_thread(WorkerCtx *ctx)
 {
-	ctx->Rd_xy = alloc_mat2(gctx.Nx, gctx.Ny);
+	ctx->Rd_xy = alloc_mat2(g_Nx, g_Ny);
 	random_init(ctx->rand_state);
 
-	u32 photon_inc = gctx.N_photons_per_line / 32;
-	u32 photon_rem = gctx.N_photons_per_line % 32;
+	u32 photon_inc = g_N_photons_per_line / 32;
+	u32 photon_rem = g_N_photons_per_line % 32;
 	for (; ctx->N_lines; ctx->N_lines--) {
 		/* cache starting photon; nothing here changes between runs */
 		Photon p_start;
-		Vec3Pol pos = gctx.incidence_location;
+		Vec3Pol pos = g_incidence_location;
 		pos.theta = ctx->theta_i;
-		pos.theta += (ctx->N_lines - 1) * 2 * M_PI / gctx.N_lines;
+		pos.theta += (ctx->N_lines - 1) * 2 * M_PI / g_N_lines;
 		launch_photon(&p_start, pos);
-		for (u32 i = 1; i <= gctx.N_photons_per_line; i++) {
+		for (u32 i = 1; i <= g_N_photons_per_line; i++) {
 			/* Photon is 64 bytes. this will use SIMD if available.
 			 * otherwise compiler will just insert a memcpy call */
 			Photon p = p_start;
@@ -527,10 +534,10 @@ print_progress(time_t start)
 
 	time_t now;
 	time(&now);
-	u64 total_photons = gctx.N_photons_per_line * gctx.N_lines;
+	u64 total_photons = g_N_photons_per_line * g_N_lines;
 	u64 n_remaining = total_photons - n_done;
 	f64 photons_per_sec = n_done / (f64)(now - start);
-	f64 sec_per_line = gctx.N_photons_per_line / photons_per_sec;
+	f64 sec_per_line = g_N_photons_per_line / photons_per_sec;
 
 	u32 secs_remaining = n_remaining / photons_per_sec;
 	u32 mins_remaining = secs_remaining / 60;
@@ -554,24 +561,24 @@ main(int argc, char *argv[])
 
 	init();
 
-	Mat2 Rd_xy_out = alloc_mat2(gctx.Nx, gctx.Ny);
+	Mat2 Rd_xy_out = alloc_mat2(g_Nx, g_Ny);
 
 	pthread_mutex_init(&completed_photons.lock, NULL);
 
 	/* TODO: split up photons instead if there are only a few lines */
-	u32 thread_count = MIN(os_get_core_count(), gctx.N_lines);
+	u32 thread_count = MIN(os_get_core_count(), g_N_lines);
 	WorkerCtx *threads = calloc(thread_count, sizeof(WorkerCtx));
 	if (!threads)
 		die("couldn't allocate thread contexts\n");
 
-	u32 rem = gctx.N_lines % thread_count;
+	u32 rem = g_N_lines % thread_count;
 	f64 theta_step = 2 * M_PI / (f64)thread_count;
-	f64 theta = gctx.incidence_location.theta;
+	f64 theta = g_incidence_location.theta;
 	time_t tstart, tend;
 	time(&tstart);
 	for (u32 i = 0; i < thread_count; i++) {
 		threads[i].theta_i = theta;
-		threads[i].N_lines = gctx.N_lines / thread_count;
+		threads[i].N_lines = g_N_lines / thread_count;
 		if (rem) {
 			threads[i].N_lines += 1;
 			rem -= 1;
