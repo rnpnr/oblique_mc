@@ -32,7 +32,6 @@
 #define SGN(x)     ((x) >= 0 ? 1 : -1)
 #define ABS(x)     ((x) >= 0 ? x : -x)
 #define LEN(a)     (sizeof(a) / sizeof(*a))
-#define MIN(a, b)  ((a) < (b) ? (a) : (b))
 #define DEG2RAD(a) ((a) * M_PI / 180.0)
 
 #define ZERO   1.0e-6
@@ -66,8 +65,7 @@ typedef struct {
 	pthread_t id;
 	u64       rand_state[2];
 	Mat2      Rd_xy;
-	f64       theta_i;
-	u32       N_lines;
+	u64       N_photons;
 	b32       done;
 } WorkerCtx;
 
@@ -486,7 +484,7 @@ simulate_photon(Photon *p, WorkerCtx *ctx)
 }
 
 static void
-bump_completed_photons(u32 n)
+bump_completed_photons(u64 n)
 {
 	pthread_mutex_lock(&completed_photons.lock);
 	completed_photons.N += n;
@@ -499,19 +497,20 @@ worker_thread(WorkerCtx *ctx)
 	ctx->Rd_xy = alloc_mat2(g_Nx, g_Ny);
 	random_init(ctx->rand_state);
 
-	u32 photon_inc = g_N_photons_per_line / 32;
-	u32 photon_rem = g_N_photons_per_line % 32;
-	for (; ctx->N_lines; ctx->N_lines--) {
+	u64 photons_per_line = ctx->N_photons / g_N_lines;
+	u64 photon_inc = photons_per_line / 32;
+	u64 photon_rem = photons_per_line % 32;
+	for (u64 n_lines = g_N_lines; n_lines; n_lines--) {
 		/* cache starting photon; nothing here changes between runs */
 		Photon p_start;
 		Vec3Pol pos = g_incidence_location;
-		pos.theta = ctx->theta_i;
-		pos.theta += (ctx->N_lines - 1) * 2 * M_PI / g_N_lines;
+		pos.theta += (n_lines - 1) * 2 * M_PI / (f64)g_N_lines;
 		launch_photon(&p_start, pos);
-		for (u32 i = 1; i <= g_N_photons_per_line; i++) {
-			/* Photon is 64 bytes. this will use SIMD if available.
-			 * otherwise compiler will just insert a memcpy call */
-			Photon p = p_start;
+		for (u64 i = 1; i <= photons_per_line; i++) {
+			Photon p;
+			s8 src  = {(u8 *)&p_start, sizeof(Photon)};
+			s8 dest = {(u8 *)&p, sizeof(Photon)};
+			mem_copy(src, dest);
 			simulate_photon(&p, ctx);
 			if (i % photon_inc == 0)
 				bump_completed_photons(photon_inc);
@@ -567,27 +566,22 @@ main(int argc, char *argv[])
 
 	pthread_mutex_init(&completed_photons.lock, NULL);
 
-	/* TODO: split up photons instead if there are only a few lines */
-	u32 thread_count = MIN(os_get_core_count(), g_N_lines);
+	u32 thread_count = os_get_core_count();
 	WorkerCtx *threads = calloc(thread_count, sizeof(WorkerCtx));
 	if (!threads)
 		die("couldn't allocate thread contexts\n");
 
-	u32 rem = g_N_lines % thread_count;
-	f64 theta_step = 2 * M_PI / (f64)thread_count;
-	f64 theta = g_incidence_location.theta;
+	/* adjust counts to make n_photons an even
+	 * multiple of both g_N_lines and thread_count */
+	g_N_photons_per_line += g_N_lines * g_N_photons_per_line % thread_count;
+	u64 n_photons = g_N_lines * g_N_photons_per_line / thread_count;
+
 	time_t tstart, tend;
 	time(&tstart);
 	for (u32 i = 0; i < thread_count; i++) {
-		threads[i].theta_i = theta;
-		threads[i].N_lines = g_N_lines / thread_count;
-		if (rem) {
-			threads[i].N_lines += 1;
-			rem -= 1;
-		}
+		threads[i].N_photons = n_photons;
 		pthread_create(&threads[i].id, NULL,
 		               (void *(*)(void*))worker_thread, &threads[i]);
-		theta += theta_step;
 	}
 
 	b32 all_done = 0;
