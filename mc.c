@@ -66,6 +66,7 @@ typedef struct {
 	u64       rand_state[4];
 	Mat2      Rd_xy;
 	u64       N_photons;
+	u32       highest_photon_scatters;
 	b32       done;
 } WorkerCtx;
 
@@ -517,6 +518,8 @@ worker_thread(WorkerCtx *ctx)
 			s8 dest = {(u8 *)&p, sizeof(Photon)};
 			mem_copy(src, dest);
 			simulate_photon(&p, ctx);
+			if (ctx->highest_photon_scatters < p.n_scatters)
+				ctx->highest_photon_scatters = p.n_scatters;
 			if (i % photon_inc == 0)
 				bump_completed_photons(photon_inc);
 		}
@@ -590,6 +593,7 @@ main(int argc, char *argv[])
 	}
 
 	b32 all_done = 0;
+	u32 highest_photon_scatters = 0;
 	while (!all_done) {
 		struct timespec ts = { .tv_sec = 1, .tv_nsec = 0 };
 		nanosleep(&ts, NULL);
@@ -600,6 +604,8 @@ main(int argc, char *argv[])
 				sum_mat2(Rd_xy_out, threads[i].Rd_xy);
 				free(threads[i].Rd_xy.b);
 				threads[i].Rd_xy.b = NULL;
+				if (highest_photon_scatters < threads[i].highest_photon_scatters)
+					highest_photon_scatters = threads[i].highest_photon_scatters;
 			}
 		}
 		print_progress(tstart);
@@ -607,6 +613,7 @@ main(int argc, char *argv[])
 	time(&tend);
 	u32 secs = tend - tstart;
 	printf("\nRuntime: %um %us\n", secs/60, secs%60);
+	printf("Highest Number of Scatters: %u\n", highest_photon_scatters);
 
 	pthread_mutex_destroy(&completed_photons.lock);
 
