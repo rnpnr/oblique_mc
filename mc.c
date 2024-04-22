@@ -63,7 +63,7 @@ typedef struct {
 
 typedef struct {
 	pthread_t id;
-	u64       rand_state[2];
+	u64       rand_state[4];
 	Mat2      Rd_xy;
 	u64       N_photons;
 	b32       done;
@@ -222,30 +222,35 @@ init(void)
 }
 
 static void
-random_init(u64 s[2])
+random_init(u64 s[4])
 {
 	struct timespec ts;
 	clock_gettime(CLOCK_REALTIME, &ts);
-	s[0] = (intptr_t)&printf ^ ts.tv_sec ^ ((u64)ts.tv_nsec * 0xAC5533CD);
-	s[1] = (intptr_t)&malloc ^ ts.tv_sec ^ ((u64)ts.tv_nsec * 0xAC5533CD);
+	s[0] = (intptr_t)&printf ^ ts.tv_sec ^ (u64)ts.tv_nsec;
+	s[1] = (intptr_t)&malloc ^ ts.tv_sec ^ (u64)ts.tv_nsec;
+	s[2] = (intptr_t)&die    ^ ts.tv_sec ^ (u64)ts.tv_nsec;
+	s[3] = (intptr_t)&sin    ^ ts.tv_sec ^ (u64)ts.tv_nsec;
 }
 
 static u64
-xoroshiro128plus(u64 s[2])
+xoroshiro256star(u64 s[4])
 {
-	u64 s0 = s[0];
-	u64 s1 = s[1];
-	u64 result = s0 + s1;
-	s1 ^= s0;
-	s[0] = ((s0 << 24) | (s0 >> 40)) ^ s1 ^ (s1 << 16);
-	s[1] = (s1 << 37) | (s1 >> 27);
+	u64 ts1 = s[1] * 5;
+	u64 result = ((ts1 << 7) | (ts1 >> 57)) * 9;
+	u64 t = s[1] << 17;
+	s[2] ^= s[0];
+	s[3] ^= s[1];
+	s[1] ^= s[2];
+	s[0] ^= s[3];
+	s[2] ^= t;
+	s[3] = ((s[3] << 45) | (s[3] >> 19));
 	return result;
 }
 
 static f64
-random_uniform(u64 s[2])
+random_uniform(u64 s[4])
 {
-	return xoroshiro128plus(s) / (f64)UINT64_MAX;
+	return xoroshiro256star(s) / (f64)UINT64_MAX;
 }
 
 static Mat2
@@ -374,7 +379,7 @@ reflect_or_transmit_photon(Photon *p, WorkerCtx *ctx)
 }
 
 static void
-scatter_photon(Photon *p, u64 rand_state[2])
+scatter_photon(Photon *p, u64 rand_state[4])
 {
 	if (p->dead)
 		return;
@@ -423,7 +428,7 @@ scatter_photon(Photon *p, u64 rand_state[2])
 }
 
 static void
-check_photon_life(Photon *p, u64 rand_state[2])
+check_photon_life(Photon *p, u64 rand_state[4])
 {
 	if (p->dead)
 		return;
@@ -441,7 +446,7 @@ check_photon_life(Photon *p, u64 rand_state[2])
 }
 
 static f64
-next_step(f64 s, u64 rand_state[2])
+next_step(f64 s, u64 rand_state[4])
 {
 	if (s < ZERO) {
 		f64 r = random_uniform(rand_state);
