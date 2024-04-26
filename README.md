@@ -42,3 +42,13 @@ the output if you don't ensure this yourself.
 
 If you intend on using this as a basis for any published works a
 citation, while not required, would be appreciated 🙂!
+
+```bibtex
+@software{rnpnroblique2024,
+	title     = {Oblique Incidence Monte Carlo},
+	author    = {Palamar, Randy},
+	year      = 2024,
+	month     = 4,
+	url       = {https://github.com/rnpnr/oblique_mc}
+}
+```
